@@ -1100,7 +1100,27 @@ function copyText(text) {
   return Promise.resolve(false);
 }
 function renderToolDispatch(tool) {
-  hideWelcome(); const card=el('div','card'); card.id='tool-'+tool.id; card.dataset.open='false'; card.dataset.tone='accent';
+function renderToolDispatch(tool) {
+  hideWelcome();
+  // Check if a card already exists for this tool (from a partial dispatch while
+  // arguments were still streaming). If so, update its subject with args that
+  // weren't available yet, instead of creating a duplicate card.
+  const existing=toolCards[tool.id];
+  if(existing){
+    if(tool.args){
+      let subject=existing.querySelector('.subject');
+      if(!subject){
+        subject=document.createElement('span');
+        subject.className='subject';
+        const name=existing.querySelector('.name');
+        const grow=existing.querySelector('.grow');
+        if(name&&grow)name.parentNode.insertBefore(subject,grow);
+      }
+      subject.textContent=tool.args.slice(0,80);
+    }
+    scrollDown(); return;
+  }
+  const card=el('div','card'); card.id='tool-'+tool.id; card.dataset.open='false'; card.dataset.tone='accent';
   card.dataset.startedAt=String(Date.now());
   const head=el('div','card-head');
   const summary=toolArgsSummary(tool.args);
