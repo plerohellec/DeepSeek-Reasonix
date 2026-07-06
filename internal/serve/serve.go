@@ -1207,34 +1207,26 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		Turns   int    `json:"turns,omitempty"`
 		Current bool   `json:"current,omitempty"`
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := agent.ListSessions(dir)
 	if err != nil {
 		writeJSON(w, []any{})
 		return
 	}
 	current := filepath.Clean(s.ctl().SessionPath())
 	var out []sessionEntry
-	for _, e := range entries {
-		if e.IsDir() || !store.IsSessionTranscriptName(e.Name()) {
-			continue
+	for _, session := range entries {
+		name := strings.TrimSuffix(filepath.Base(session.Path), ".jsonl")
+		title := session.CustomTitle
+		if title == "" {
+			title = s.sessionTitle(filepath.Base(session.Path), session.Preview, session.ModTime.UnixNano())
 		}
-		path := filepath.Join(dir, e.Name())
-		if agent.IsCleanupPending(path) {
-			continue
-		}
-		name := strings.TrimSuffix(e.Name(), ".jsonl")
-		entry := sessionEntry{Name: name, Path: path, Current: filepath.Clean(path) == current}
-		// Event-log aware: reading the .jsonl checkpoint directly would freeze
-		// turn counts and titles at the last checkpoint write.
-		if first, turns := agent.SessionPreview(path); turns > 0 {
-			entry.Turns = turns
-			entry.Title = s.sessionTitle(r.Context(), e.Name(), first, agent.SessionContentModTime(path).UnixNano())
-		}
-		out = append(out, entry)
-	}
-	// reverse so newest first
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
+		out = append(out, sessionEntry{
+			Name:    name,
+			Path:    session.Path,
+			Title:   title,
+			Turns:   session.Turns,
+			Current: filepath.Clean(session.Path) == current,
+		})
 	}
 	if out == nil {
 		out = []sessionEntry{}
@@ -1351,13 +1343,9 @@ func removeSessionFiles(absDir, abs string) error {
 // sessionTitle returns a title for a session: the cached flash-generated title
 // when it matches the file's mtime, otherwise a freshly generated one (cached
 // for next time), falling back to a truncated preview when generation is off.
-func (s *Server) sessionTitle(ctx context.Context, name, first string, mod int64) string {
+func (s *Server) sessionTitle(name, first string, mod int64) string {
 	if cached, ok := s.titles.get(name, mod); ok {
 		return cached
-	}
-	if title := s.generateTitle(ctx, first); title != "" {
-		s.titles.put(name, title, mod)
-		return title
 	}
 	return previewTitle(first)
 }
