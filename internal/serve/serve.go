@@ -1105,7 +1105,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSuffix(filepath.Base(session.Path), ".jsonl")
 		title := session.CustomTitle
 		if title == "" {
-			title = s.sessionTitle(filepath.Base(session.Path), session.Preview, session.ModTime.UnixNano())
+			title = s.sessionTitle(r.Context(), filepath.Base(session.Path), session.Preview, session.ModTime.UnixNano(), session.Path)
 		}
 		out = append(out, sessionEntry{
 			Name:    name,
@@ -1228,12 +1228,26 @@ func removeSessionFiles(absDir, abs string) error {
 }
 
 // sessionTitle returns a title for a session: the cached flash-generated title
-// when it matches the file's mtime, otherwise a freshly generated one (cached
-// for next time), falling back to a truncated preview when generation is off.
-func (s *Server) sessionTitle(name, first string, mod int64) string {
+// when it matches the file's mtime, otherwise a preview (truncated first
+// message). Generation is always async — the first load renders a preview,
+// and once the LLM responds the result is cached in both the in-memory+disk
+// title cache and the session sidecar's CustomTitle, so every subsequent load
+// gets the flash title without any additional call.
+func (s *Server) sessionTitle(ctx context.Context, name, first string, mod int64, sessionPath string) string {
 	if cached, ok := s.titles.get(name, mod); ok {
 		return cached
 	}
+	// Fire async generation so the listing endpoint never blocks on an LLM.
+	go func() {
+		if title := s.generateTitle(context.Background(), first); title != "" {
+			s.titles.put(name, title, mod)
+			// Persist to the sidecar so ListSessions returns CustomTitle directly.
+			if meta, ok, err := agent.LoadBranchMeta(sessionPath); err == nil && ok {
+				meta.CustomTitle = title
+				_ = agent.SaveBranchMetaPreserveUpdated(sessionPath, meta)
+			}
+		}
+	}()
 	return previewTitle(first)
 }
 
