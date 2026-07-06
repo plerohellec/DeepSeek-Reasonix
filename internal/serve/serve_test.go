@@ -172,7 +172,7 @@ func TestHistoryMessagesPreserveToolDetails(t *testing.T) {
 
 func TestHistoryMessagesStripTransientUserBlocks(t *testing.T) {
 	got := historyMessages([]provider.Message{{
-		Role: provider.RoleUser,
+		Role:    provider.RoleUser,
 		Content: "<response-language>\nFinal answer language preference: use English.\n</response-language>\n\nHelp me debug the auth module",
 	}})
 
