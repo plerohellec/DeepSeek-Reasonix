@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"reasonix/internal/agent"
+	"reasonix/internal/checkpoint"
 	"reasonix/internal/config"
 	"reasonix/internal/control"
 	"reasonix/internal/eventwire"
@@ -161,6 +162,20 @@ func TestHistoryMessagesPreserveToolDetails(t *testing.T) {
 	}
 }
 
+func TestHistoryMessagesStripTransientUserBlocks(t *testing.T) {
+	got := historyMessages([]provider.Message{{
+		Role: provider.RoleUser,
+		Content: "<response-language>\nFinal answer language preference: use English.\n</response-language>\n\nHelp me debug the auth module",
+	}})
+
+	if len(got) != 1 {
+		t.Fatalf("history length = %d, want 1", len(got))
+	}
+	if got[0].Content != "Help me debug the auth module" {
+		t.Fatalf("history user content = %q, want stripped prompt", got[0].Content)
+	}
+}
+
 func TestSessionsListPreviewStripsTransientReasoningLanguageBlock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
@@ -200,6 +215,54 @@ func TestSessionsListPreviewSeesEventLogTurns(t *testing.T) {
 	}
 	if mod := agent.SessionContentModTime(path); mod.IsZero() {
 		t.Error("SessionContentModTime returned zero for a live session")
+	}
+}
+
+func TestCheckpointsStripTransientUserBlocks(t *testing.T) {
+	bc := NewBroadcaster()
+	ctrl := control.New(control.Options{Sink: bc})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	if err := os.MkdirAll(filepath.Join(dir, "session.ckpt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := checkpoint.Checkpoint{
+		Turn:   0,
+		Prompt: "<response-language>\nFinal answer language preference: use English.\n</response-language>\n\nExplain this module",
+	}
+	body, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "session.ckpt", "turn-0.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	session := agent.NewSession("system")
+	ctrl.Resume(session, path)
+	srv := httptest.NewServer(New(ctrl, bc, config.ServeConfig{}).Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/checkpoints")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("checkpoints status = %d, want 200", resp.StatusCode)
+	}
+	var cps []struct {
+		Turn   int    `json:"turn"`
+		Prompt string `json:"prompt"`
+		Files  int    `json:"files"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&cps); err != nil {
+		t.Fatal(err)
+	}
+	if len(cps) != 1 {
+		t.Fatalf("checkpoint count = %d, want 1", len(cps))
+	}
+	if cps[0].Prompt != "Explain this module" {
+		t.Fatalf("checkpoint prompt = %q, want stripped prompt", cps[0].Prompt)
 	}
 }
 
