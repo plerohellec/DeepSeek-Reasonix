@@ -28,6 +28,14 @@ type fakeRunner struct{ got chan string }
 
 func (f fakeRunner) Run(_ context.Context, input string) error { f.got <- input; return nil }
 
+type panicTitleProvider struct{}
+
+func (panicTitleProvider) Name() string { return "panic-title" }
+
+func (panicTitleProvider) Stream(context.Context, provider.Request) (<-chan provider.Chunk, error) {
+	panic("title provider should not be called by /sessions")
+}
+
 func TestServeSubmitRunsAndBroadcastsTurnDone(t *testing.T) {
 	bc := NewBroadcaster()
 	got := make(chan string, 1)
@@ -215,6 +223,64 @@ func TestSessionsListPreviewSeesEventLogTurns(t *testing.T) {
 	}
 	if mod := agent.SessionContentModTime(path); mod.IsZero() {
 		t.Error("SessionContentModTime returned zero for a live session")
+	}
+}
+
+func TestSessionsUsesSidecarMetadataWithoutTranscriptDecode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "saved.jsonl")
+	if err := os.WriteFile(path, []byte("{not valid jsonl"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := agent.SaveBranchMeta(path, agent.BranchMeta{
+		ID:            "saved",
+		CustomTitle:   "Pinned title",
+		SchemaVersion: agent.BranchMetaCountsVersion,
+		Turns:         7,
+		Preview:       "actual preview",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	bc := NewBroadcaster()
+	ctrl := control.New(control.Options{Sink: bc, SessionDir: dir, SessionPath: path})
+	server := New(ctrl, bc, config.ServeConfig{})
+	server.titleProv = panicTitleProvider{}
+	srv := httptest.NewServer(server.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/sessions status = %d, want 200", resp.StatusCode)
+	}
+	var got []struct {
+		Name    string `json:"name"`
+		Path    string `json:"path"`
+		Title   string `json:"title"`
+		Turns   int    `json:"turns"`
+		Current bool   `json:"current"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("/sessions count = %d, want 1", len(got))
+	}
+	if got[0].Name != "saved" || filepath.Clean(got[0].Path) != filepath.Clean(path) {
+		t.Fatalf("/sessions entry = %+v, want saved session", got[0])
+	}
+	if got[0].Title != "Pinned title" {
+		t.Fatalf("title = %q, want custom title", got[0].Title)
+	}
+	if got[0].Turns != 7 {
+		t.Fatalf("turns = %d, want 7", got[0].Turns)
+	}
+	if !got[0].Current {
+		t.Fatal("current = false, want true")
 	}
 }
 
