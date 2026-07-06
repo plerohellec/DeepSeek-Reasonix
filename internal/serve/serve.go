@@ -615,7 +615,11 @@ func historyMessages(msgs []provider.Message) []historyMessage {
 				continue
 			}
 		}
-		hm := historyMessage{Role: string(m.Role), Content: m.Content}
+		content := m.Content
+		if m.Role == provider.RoleUser {
+			content = agent.UserPreviewText(content)
+		}
+		hm := historyMessage{Role: string(m.Role), Content: content}
 		if m.Role == provider.RoleAssistant {
 			hm.Reasoning = m.ReasoningContent
 			if len(m.ToolCalls) > 0 {
@@ -989,7 +993,7 @@ func (s *Server) checkpoints(w http.ResponseWriter, _ *http.Request) {
 	raw := s.ctl().Checkpoints()
 	out := make([]cp, len(raw))
 	for i, c := range raw {
-		out[i] = cp{Turn: c.Turn, Prompt: c.Prompt, Files: len(c.Paths)}
+		out[i] = cp{Turn: c.Turn, Prompt: agent.UserPreviewText(c.Prompt), Files: len(c.Paths)}
 	}
 	writeJSON(w, out)
 }
