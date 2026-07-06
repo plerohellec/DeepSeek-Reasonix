@@ -76,6 +76,7 @@ func New(ctrl control.SessionAPI, bc *Broadcaster, serveCfg config.ServeConfig) 
 		auth:   newAuthGate(serveCfg),
 	}
 	s.initTitleProvider()
+	s.backfillTitles()
 	return s
 }
 
@@ -149,7 +150,7 @@ func (s *Server) initTitleProvider() {
 		BaseURL: entry.BaseURL,
 		Model:   entry.Model,
 		APIKey:  entry.APIKey(),
-		Extra:   map[string]any{"effort": "off"},
+		Extra:   map[string]any{"effort": "disabled"},
 	})
 	if err != nil {
 		return
@@ -1165,7 +1166,7 @@ func (s *Server) generateTitle(ctx context.Context, firstMsg string) string {
 			{Role: provider.RoleUser, Content: firstMsg},
 		},
 		Temperature: provider.TemperaturePtr(0),
-		MaxTokens:   20,
+		MaxTokens:   100,
 	})
 	if err != nil {
 		return ""
@@ -1177,7 +1178,7 @@ func (s *Server) generateTitle(ctx context.Context, firstMsg string) string {
 		case provider.ChunkText:
 			text.WriteString(chunk.Text)
 		case provider.ChunkUsage:
-			// Title usage is intentionally not broadcast on the shared chat SSE stream.
+			usage = chunk.Usage
 		case provider.ChunkError:
 			return ""
 		}
@@ -1358,10 +1359,44 @@ func (s *Server) sessionTitle(ctx context.Context, name, first string, mod int64
 			if meta, ok, err := agent.LoadBranchMeta(sessionPath); err == nil && ok {
 				meta.CustomTitle = title
 				_ = agent.SaveBranchMetaPreserveUpdated(sessionPath, meta)
+				slog.Debug("serve: title generated", "session", name, "title", title)
 			}
+		} else {
+			slog.Debug("serve: title generation returned empty", "session", name)
 		}
 	}()
 	return previewTitle(first)
+}
+
+// backfillTitles scans sessions without CustomTitle at startup and fires async
+// title generation for each, so they're populated even if the browser sidebar
+// is never loaded (e.g. CLI-only usage that is later viewed via /sessions).
+func (s *Server) backfillTitles() {
+	if nilutil.IsNil(s.titleProv) {
+		return
+	}
+	dir := s.ctl().SessionDir()
+	if dir == "" {
+		return
+	}
+	go func() {
+		entries, err := agent.ListSessions(dir)
+		if err != nil {
+			slog.Warn("serve: failed to list sessions for title backfill", "err", err)
+			return
+		}
+		for _, session := range entries {
+			if session.CustomTitle != "" {
+				continue
+			}
+			// sessionTitle fires its own goroutine — non-blocking.
+			s.sessionTitle(context.Background(),
+				filepath.Base(session.Path),
+				session.Preview,
+				session.ModTime.UnixNano(),
+				session.Path)
+		}
+	}()
 }
 
 func previewTitle(first string) string {
