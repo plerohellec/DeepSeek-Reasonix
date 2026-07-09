@@ -1146,8 +1146,8 @@ function renderToolDispatch(tool) {
   card.dataset.startedAt=String(Date.now());
   card.dataset.toolArgs=String(tool.args||'');
   const head=el('div','card-head');
-  const summary=toolArgsSummary(tool.args);
-  head.innerHTML='<span class="ico spin">'+toolIcon('accent')+'</span><div class="card-main"><div class="card-title"><span class="name">'+escHtml(tool.name)+'</span>'+(summary?'<span class="subject">'+escHtml(summary)+'</span>':'')+'</div><div class="card-meta">'+escHtml(__('tool_args'))+' '+fmtTok(String(tool.args||'').length)+'</div></div><span class="card-badge">'+escHtml(__('tool_running'))+'</span><div class="card-actions"><button type="button" class="card-action card-copy" title="'+escAttr(__('tool_copy'))+'" aria-label="'+escAttr(__('tool_copy'))+'"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><span class="chev"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></span></div>';
+  const head=el('div','card-head');
+  head.innerHTML='<span class="ico spin">'+toolIcon('accent')+'</span><div class="card-main"><div class="card-title"><span class="name">'+escHtml(tool.name)+'</span>'+(tool.args?'<span class="subject" title="'+escAttr(tool.args)+'">'+escHtml(tool.args)+'</span>':'')+'</div><div class="card-meta">'+escHtml(__('tool_args'))+' '+fmtTok(String(tool.args||'').length)+'</div></div><span class="card-badge">'+escHtml(__('tool_running'))+'</span><div class="card-actions"><button type="button" class="card-action card-copy" title="'+escAttr(__('tool_copy'))+'" aria-label="'+escAttr(__('tool_copy'))+'"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><span class="chev"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></span></div>';
   const body=el('div','card-body'); body.style.display='none';
   head.onclick=e=>{if(e.target.closest('button'))return;const open=card.dataset.open==='true';card.dataset.open=open?'false':'true';body.style.display=open?'none':'';};
   const copy=head.querySelector('.card-copy');
@@ -1162,7 +1162,7 @@ function renderToolResult(tool) {
   else {
     const body=card.querySelector('.card-body');
     const output=String(tool.output||'');
-    if(body)body.textContent=output?output.slice(0,2000)+(tool.truncated?'\n...[truncated]':''):__('tool_no_output');
+    if(body)body.textContent=output?output+(tool.truncated?'\n...[truncated]':''):__('tool_no_output');
     updateToolMeta(card,fmtElapsed(elapsed)+' · '+lineCount(output)+' '+__('tool_lines'));
   }
   scrollDown();
@@ -1172,7 +1172,8 @@ function renderToolProgress(tool) {
   const body=card.querySelector('.card-body'); if(!body)return;
   body.style.display=''; card.dataset.open='true';
   body.textContent+=tool.output||'';
-  if(body.textContent.length>4000) body.textContent=body.textContent.slice(-3000);
+  // Generous sliding window during streaming (replaced by full output in renderToolResult)
+  if(body.textContent.length>100000) body.textContent=body.textContent.slice(-80000);
   updateToolMeta(card,fmtElapsed(Date.now()-Number(card.dataset.startedAt||Date.now()))+' · '+lineCount(body.textContent)+' '+__('tool_lines'));
   scrollDown();
 }
