@@ -127,6 +127,10 @@ input,textarea{font:inherit;color:inherit}
 .spin{animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* hide extras toggle */
+body.hide-extras .card,
+body.hide-extras .reasoning{display:none!important}
+
 /* metric strip (v1) */
 .metric-strip{display:flex;gap:0;padding:5px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border);margin:8px auto;max-width:760px;font-family:var(--mono);font-size:11px;color:var(--muted)}
 .metric-strip .item{padding:0 10px;display:flex;align-items:center;gap:5px;border-right:1px solid var(--border)}
@@ -512,6 +516,10 @@ input,textarea{font:inherit;color:inherit}
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
         __('goal_btn')
       </button>
+      <button class="toolbar__btn toolbar__btn--active" id="btn-toggle-tools" title="__('hide_tools')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        __('toggle_tools')
+      </button>
       <div class="toolbar__sep"></div>
       <div class="status">
         <span class="status__dot" id="status-dot-footer"></span>
@@ -724,6 +732,9 @@ const __T = {
     'auto': 'Auto',
     'plan': 'Plan',
     'goal_btn': 'Goal',
+    'hide_tools': 'Hide tools & reasoning',
+    'show_tools': 'Show tools & reasoning',
+    'toggle_tools': 'Tools',
     'yolo': 'YOLO',
     'send': 'Send (Enter)',
     'cancel': 'Cancel (Esc)',
@@ -858,6 +869,9 @@ const __T = {
     'auto': '自动',
     'plan': '计划',
     'goal_btn': '目标',
+    'hide_tools': '隐藏工具调用与思考',
+    'show_tools': '显示工具调用与思考',
+    'toggle_tools': '工具',
     'yolo': 'YOLO',
     'send': '发送 (Enter)',
     'cancel': '取消 (Esc)',
@@ -1761,6 +1775,23 @@ function toggleGoalMode(){
   }
 }
 
+// ── tool visibility toggle ──
+let toolsVisible = localStorage.getItem('toolsVisible') !== 'false';
+function applyToolsVisibility(){
+  document.body.classList.toggle('hide-extras', !toolsVisible);
+  const btn=$('#btn-toggle-tools');
+  if(btn){
+    btn.classList.toggle('toolbar__btn--active', toolsVisible);
+    btn.title = toolsVisible ? __('hide_tools') : __('show_tools');
+  }
+}
+function toggleToolsVisibility(){
+  toolsVisible = !toolsVisible;
+  localStorage.setItem('toolsVisible', String(toolsVisible));
+  applyToolsVisibility();
+}
+applyToolsVisibility();
+
 // ── todo panel ──
 let todosState=[],todosDismissed=false;
 function parseTodos(args){
@@ -1814,6 +1845,7 @@ $('#btn-auto').onclick=()=>void setMode('auto');
 $('#btn-plan').onclick=()=>void setPlan(!planMode);
 $('#btn-bypass').onclick=()=>void toggleYolo();
 $('#btn-goal').onclick=()=>toggleGoalMode();
+$('#btn-toggle-tools').onclick=()=>toggleToolsVisibility();
 $('#goal-chip').onclick=()=>toggleGoalMode();
 $('#btn-new').onclick=()=>{if(running)return;post('/new').then(()=>{followTranscript=true;log.innerHTML='';log.appendChild(welcome);showWelcome();hasVisibleHistory=false;checkpointCount=0;todosState=[];todosDismissed=false;renderTodoPanel();resetCumulativeStats();loadSessions();updateActionAvailability();});};
 $('#btn-compact').onclick=()=>{if(actionDisabled('btn-compact')){showNotice(__('no_conversation'),'warn');return;}post('/compact');};
